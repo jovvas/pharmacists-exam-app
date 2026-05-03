@@ -203,6 +203,31 @@
     padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-top: 10px;
   }
 
+  /* Formatted legal text blocks */
+  .full-article-body .ft-lead {
+    font-size: 14px; font-weight: 600; color: #1b2a4e;
+    margin: 0 0 14px; line-height: 1.7;
+    padding-bottom: 10px; border-bottom: 1px solid #eef0f5;
+  }
+  .full-article-body .ft-para {
+    font-size: 14px; color: #1f2330;
+    margin: 12px 0 4px; line-height: 1.8;
+  }
+  .full-article-body .ft-sub {
+    font-size: 14px; color: #1f2330;
+    margin: 6px 0; line-height: 1.8;
+    padding-left: 28px;
+  }
+  .full-article-body .ft-def {
+    font-size: 14px; color: #1f2330;
+    margin: 6px 0; line-height: 1.8;
+    padding-left: 16px;
+    border-left: 3px solid #c5d0e8;
+  }
+  .full-article-body .ft-def strong {
+    color: #1b2a4e;
+  }
+
   .my-notes-section {
     background: #fff; border: 1px solid #e3e6ec; border-radius: 8px;
     padding: 16px 22px;
@@ -359,6 +384,68 @@ function bestSnippet(article, query) {
   if (article.titleGr.toLowerCase().includes(q)) return article.titleGr;
   if (article.notes.length) return article.notes[0].text;
   return "";
+}
+
+/* =========================================================
+   LEGAL TEXT FORMATTER
+   Turns raw PDF-extracted text (line-wrapped, flat) into
+   structured HTML with proper paragraphs and indentation.
+   ========================================================= */
+function formatLegalText(rawText, q) {
+  if (!rawText) return '';
+
+  const lines = rawText.split('\n');
+  const blocks = []; // { type: 'lead'|'para'|'sub'|'def', text: string }
+  let current = null;
+
+  const push = (type, text) => { current = { type, text }; blocks.push(current); };
+  const append = text => {
+    if (current) current.text += ' ' + text;
+    else push('para', text);
+  };
+
+  for (const raw of lines) {
+    const t = raw.trim();
+    if (!t) continue;
+
+    // Strip bare page-reference lines like "2/29", "14/29"
+    if (/^\d+\/\d+$/.test(t)) continue;
+
+    // Article lead line: "4.-(1)…" or "4Α.-(1)…"
+    if (/^\d+[Α-Ωα-ω]?\.-/.test(t)) { push('lead', t); continue; }
+
+    // Numbered sub-paragraph: "(1) …" — must be followed by a Greek letter (not a cross-ref like "(1) ανωτέρω")
+    if (/^\(\d+\)\s+[Α-Ωα-ω]/.test(t)) { push('para', t); continue; }
+
+    // Greek-letter sub-item: "(α) …", "(αα) …" — skip if it's a cross-ref joined by ή/και
+    if (/^\([α-ωΑ-Ω]+\)/.test(t) && !/^\([α-ωΑ-Ω]+\)\s+(ή|και)[,\s]/.test(t)) {
+      push('sub', t); continue;
+    }
+
+    // Definition term: line starting with an opening quote (straight, curly U+201C, or guillemet)
+    if (/^["“"«]/.test(t)) { push('def', t); continue; }
+
+    // Everything else is a continuation of the previous block (PDF line wrap)
+    append(t);
+  }
+
+  if (blocks.length === 0) {
+    // Fallback: no structure detected — just render as plain paragraphs split by newline
+    return rawText.split('\n')
+      .map(l => l.trim()).filter(Boolean)
+      .map(l => `<p class="ft-para">${highlight(l, q)}</p>`).join('');
+  }
+
+  return blocks.map(b => {
+    const c = highlight(b.text, q);
+    switch (b.type) {
+      case 'lead': return `<p class="ft-lead">${c}</p>`;
+      case 'para': return `<p class="ft-para">${c}</p>`;
+      case 'sub':  return `<p class="ft-sub">${c}</p>`;
+      case 'def':  return `<p class="ft-def">${c}</p>`;
+      default:     return `<p class="ft-para">${c}</p>`;
+    }
+  }).join('\n');
 }
 
 /* =========================================================
@@ -660,137 +747,4 @@ function renderReader() {
   const titleWrap = document.createElement("div");
   titleWrap.style.flex = "1";
   const pgBadge = article.page ? `<span class="pg-badge-lg">σελίδα ${article.page}</span>` : "";
-  titleWrap.innerHTML = `
-    <div class="article-num">${escapeHtml(article.number)} ${pgBadge}</div>
-    <h2 class="gr">${highlight(article.titleGr, q)}</h2>
-  `;
-  header.appendChild(titleWrap);
-
-  const bookBtn = document.createElement("button");
-  bookBtn.className = "bookmark-btn";
-  if (state.bookmarks[article.id]) bookBtn.classList.add("active");
-  bookBtn.innerHTML = state.bookmarks[article.id] ? "★ Starred" : "☆ Star";
-  bookBtn.addEventListener("click", () => {
-    if (state.bookmarks[article.id]) delete state.bookmarks[article.id];
-    else state.bookmarks[article.id] = true;
-    saveState();
-    render();
-  });
-  header.appendChild(bookBtn);
-  inner.appendChild(header);
-
-  // Key notes (the user's docx notes — primary reference)
-  const keyNotes = document.createElement("div");
-  keyNotes.className = "key-notes-section";
-  keyNotes.innerHTML = `<div class="section-label">Key notes</div>`;
-  if (article.notes.length === 0) {
-    const empty = document.createElement("div");
-    empty.style.fontSize = "13.5px";
-    empty.style.color = "#6a7185";
-    empty.style.fontStyle = "italic";
-    empty.textContent = "No key notes for this article yet.";
-    keyNotes.appendChild(empty);
-  } else {
-    const ul = document.createElement("ul");
-    ul.className = "notes-tree";
-    for (const n of article.notes) {
-      const li = document.createElement("li");
-      li.className = `lvl-${Math.min(n.level, 3)}`;
-      li.innerHTML = linkify(highlight(n.text, q));
-      ul.appendChild(li);
-    }
-    keyNotes.appendChild(ul);
-  }
-  inner.appendChild(keyNotes);
-
-  // Full article (collapsible)
-  const fa = document.createElement("div");
-  fa.className = "full-article-section";
-  if (state.fullArticleOpen[article.id]) fa.classList.add("open");
-  const faHead = document.createElement("div");
-  faHead.className = "full-article-header";
-  faHead.innerHTML = `<span class="chev">▶</span>
-    <span class="section-label" style="margin: 0;">Full article text</span>
-    ${article.fullText ? "" : '<span style="margin-left:auto; font-size:11px; color:#b0b6c4;">not yet loaded</span>'}`;
-  faHead.addEventListener("click", () => {
-    state.fullArticleOpen[article.id] = !state.fullArticleOpen[article.id];
-    saveState();
-    fa.classList.toggle("open");
-  });
-  fa.appendChild(faHead);
-  const faBody = document.createElement("div");
-  if (article.fullText) {
-    faBody.className = "full-article-body gr";
-    faBody.innerHTML = highlight(article.fullText, q);
-  } else {
-    faBody.className = "full-article-body empty";
-    faBody.innerHTML = `
-      <div>The full text of this article hasn't been loaded yet. Your notes above (page reference: ${article.page ? "σ." + article.page : "—"}) point to the corresponding section in the legislation.</div>
-      <div class="upload-hint">Upload the full legislation acts (PDF or Word) and I'll populate the full text for every article using the page references in your notes.</div>
-    `;
-  }
-  fa.appendChild(faBody);
-  inner.appendChild(fa);
-
-  // My personal notes
-  const myNotes = document.createElement("div");
-  myNotes.className = "my-notes-section";
-  myNotes.innerHTML = `<div class="section-label">My study notes</div>`;
-  const ta = document.createElement("textarea");
-  ta.className = "notes-textarea";
-  ta.placeholder = "Write your own notes for this article…";
-  ta.value = state.userNotes[article.id] || "";
-  const status = document.createElement("div");
-  status.className = "notes-status";
-  let saveTimer = null;
-  ta.addEventListener("input", () => {
-    state.userNotes[article.id] = ta.value;
-    status.textContent = "Saving…";
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      saveState();
-      status.textContent = "Saved";
-      setTimeout(() => { status.textContent = ""; }, 1200);
-    }, 350);
-  });
-  myNotes.appendChild(ta);
-  myNotes.appendChild(status);
-  inner.appendChild(myNotes);
-
-  reader.appendChild(inner);
-  return reader;
-}
-
-function renderWelcome() {
-  const w = document.createElement("div");
-  w.className = "welcome";
-  const totalLaws = DATA.laws.length;
-  const totalArts = DATA.articles.length;
-  const totalNotes = DATA.articles.reduce((sum, a) => sum + a.notes.length, 0);
-  w.innerHTML = `
-    <h2>Welcome — Legislation module</h2>
-    <p>Your notes for the Cyprus pharmacy legislation, structured for fast revision and search. Pick an article from the sidebar, or type a Greek keyword in the search box.</p>
-    <ul>
-      <li><strong>Browse</strong> — laws → parts → articles, exactly as in your source documents.</li>
-      <li><strong>Search</strong> — ranked across your notes first (most weight), then titles, then full text. Page references are searchable too.</li>
-      <li><strong>Page badges</strong> — σ.X next to each article points to the page in the actual legislation.</li>
-      <li><strong>Starred</strong> — bookmark articles for review.</li>
-      <li><strong>Full article</strong> — collapsible section under each article. Empty for now; will be populated once you upload the full acts.</li>
-      <li><strong>My study notes</strong> — your own notes per article, auto-saved in this browser.</li>
-    </ul>
-    <div class="stats">
-      <div class="stat-card"><div class="stat-num">${totalLaws}</div><div class="stat-label">Laws</div></div>
-      <div class="stat-card"><div class="stat-num">${totalArts}</div><div class="stat-label">Articles</div></div>
-      <div class="stat-card"><div class="stat-num">${totalNotes}</div><div class="stat-label">Key note bullets</div></div>
-    </div>
-    <div class="hint">
-      <strong>Next step:</strong> upload the full legislation acts (PDF / Word) and I'll fill in the "Full article text" section for every article using the page references in your notes.
-    </div>
-  `;
-  return w;
-}
-
-render();
-</script>
-</body>
-</html>
+  ti
