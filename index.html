@@ -360,6 +360,35 @@ function render() {
   main.appendChild(renderReader());
 }
 
+function selectArticle(id) {
+  // Save sidebar scroll position before any DOM change
+  const sidebarList = document.querySelector(".sidebar-list");
+  const scrollTop = sidebarList ? sidebarList.scrollTop : 0;
+
+  // Update state
+  state.selectedArticle = id;
+  saveState();
+
+  // Update active classes on sidebar items without rebuilding the sidebar
+  document.querySelectorAll(".article-item[data-article-id], .search-result[data-article-id]").forEach(el => {
+    el.classList.toggle("active", el.dataset.articleId === id);
+  });
+
+  // Swap only the reader panel
+  const oldReader = document.querySelector(".reader");
+  if (oldReader) {
+    oldReader.replaceWith(renderReader());
+  }
+
+  // Restore sidebar scroll position
+  const newSidebarList = document.querySelector(".sidebar-list");
+  if (newSidebarList) newSidebarList.scrollTop = scrollTop;
+
+  // Scroll the newly active item into view within the sidebar (never past the top)
+  const activeItem = document.querySelector(".article-item.active, .search-result.active");
+  if (activeItem) activeItem.scrollIntoView({ block: "nearest" });
+}
+
 function renderSidebar() {
   const side = document.createElement("aside");
   side.className = "sidebar";
@@ -442,11 +471,8 @@ function renderSidebarList() {
         <div class="sr-title">${highlight(article.titleGr, q)}</div>
         <div class="sr-snippet">${highlight(snippet, q)}</div>
       `;
-      item.addEventListener("click", () => {
-        state.selectedArticle = article.id;
-        saveState();
-        render();
-      });
+      item.dataset.articleId = article.id;
+      item.addEventListener("click", () => selectArticle(article.id));
       list.appendChild(item);
     }
     return list;
@@ -474,7 +500,7 @@ function renderSidebarList() {
       block.className = "law-block";
       block.innerHTML = `
         <div class="law-header"><span class="chev">▼</span>
-          <span class="law-title">${escapeHtml(law ? law.titleEn : lawId)}</span>
+          <span class="law-title gr">${escapeHtml(law ? law.titleGr : lawId)}</span>
         </div>`;
       const body = document.createElement("div");
       body.className = "law-body";
@@ -499,7 +525,7 @@ function renderSidebarList() {
     header.className = "law-header";
     const totalArts = articlesForLaw(law.id).length;
     header.innerHTML = `<span class="chev">▼</span>
-      <span class="law-title">${escapeHtml(law.titleEn)}</span>
+      <span class="law-title gr">${escapeHtml(law.titleGr)}</span>
       <span class="law-year">${escapeHtml(law.year)} · ${totalArts}</span>`;
     header.addEventListener("click", () => {
       state.expandedLaws[law.id] = collapsed; // toggle
@@ -555,11 +581,8 @@ function renderArticleItem(a) {
   item.innerHTML = `<span class="num">${escapeHtml(a.number)}</span>
     <span class="label">${escapeHtml(a.titleGr)}</span>
     ${pg}${star}`;
-  item.addEventListener("click", () => {
-    state.selectedArticle = a.id;
-    saveState();
-    render();
-  });
+  item.dataset.articleId = a.id;
+  item.addEventListener("click", () => selectArticle(a.id));
   return item;
 }
 
