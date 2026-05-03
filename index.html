@@ -768,7 +768,7 @@ function renderReader() {
   const faHead = document.createElement("div");
   faHead.className = "full-article-header";
   faHead.innerHTML = `<span class="chev">▶</span>
-    <span class="section-label" style="margin: 0;">Πλήρες κείμενο άρθρου</span>
+    <span class="section-label" style="margin: 0; text-transform: none; letter-spacing: 0;">Πλήρες κείμενο άρθρου</span>
     ${article.fullText ? "" : '<span style="margin-left:auto; font-size:11px; color:#b0b6c4;">not yet loaded</span>'}`;
   faHead.addEventListener("click", () => {
     state.fullArticleOpen[article.id] = !state.fullArticleOpen[article.id];
