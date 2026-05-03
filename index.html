@@ -99,6 +99,18 @@
   .empty-part { font-size: 11px; color: #b0b6c4; font-style: italic; padding: 4px 8px; }
   .empty-state { padding: 24px 16px; text-align: center; font-size: 13px; color: #8a91a3; }
 
+  /* Law group wrapper */
+  .law-group { border-bottom: 2px solid #d4daea; margin-bottom: 2px; }
+  .law-group-header {
+    padding: 8px 14px 5px;
+    background: #eef1f8;
+    font-size: 11px; font-weight: 700; color: #4a5878;
+    letter-spacing: 0.3px; border-bottom: 1px solid #dce1ee;
+  }
+  .law-group .law-block { border-bottom: 1px solid #f0f1f5; }
+  .law-group .law-block:last-child { border-bottom: none; }
+  .law-group .law-header { padding-left: 22px; }
+
   /* Search results in sidebar */
   .search-result {
     padding: 8px 12px;
@@ -129,7 +141,7 @@
   .article-header h2 { margin: 0; font-size: 22px; flex: 1; line-height: 1.3; }
   .article-num {
     font-size: 12px; color: #6a7185; font-weight: 600;
-    margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 4px;
     display: flex; gap: 8px; align-items: center;
   }
   .pg-badge-lg {
@@ -515,10 +527,22 @@ function renderSidebarList() {
   }
 
   // BROWSE MODE: laws → parts → articles
-  for (const law of DATA.laws) {
+  // Group definition: laws sharing the same umbrella legislation
+  const LAW_GROUPS = [
+    {
+      label: "Ναρκωτικά Φάρμακα και Ψυχότροπες Ουσίες",
+      lawIds: ["law-narcotics", "law-narcotics-kdp79", "law-narcotics-kdp19"]
+    }
+  ];
+  const groupByLawId = {};
+  for (const g of LAW_GROUPS) for (const id of g.lawIds) groupByLawId[id] = g.label;
+  const groupContainers = {}; // label → DOM element
+
+  function buildLawBlock(law) {
     const block = document.createElement("div");
     block.className = "law-block";
-    const collapsed = state.expandedLaws[law.id] === false;
+    // Default collapsed: treat undefined (never set) as collapsed; only true = expanded
+    const collapsed = state.expandedLaws[law.id] !== true;
     if (collapsed) block.classList.add("collapsed");
 
     const header = document.createElement("div");
@@ -528,7 +552,8 @@ function renderSidebarList() {
       <span class="law-title gr">${escapeHtml(law.titleGr)}</span>
       <span class="law-year">${escapeHtml(law.year)} · ${totalArts}</span>`;
     header.addEventListener("click", () => {
-      state.expandedLaws[law.id] = collapsed; // toggle
+      // collapsed is captured at build time; toggle to opposite
+      state.expandedLaws[law.id] = collapsed; // if was collapsed → set true → expanded; if expanded → set false → collapsed
       saveState();
       block.classList.toggle("collapsed");
     });
@@ -541,7 +566,7 @@ function renderSidebarList() {
       const arts = articlesForPart(part.id);
       const pblock = document.createElement("div");
       pblock.className = "part-block";
-      const pCollapsed = state.expandedParts[part.id] === false;
+      const pCollapsed = state.expandedParts[part.id] !== true;
       if (pCollapsed) pblock.classList.add("collapsed");
       const pTitle = document.createElement("div");
       pTitle.className = "part-title gr";
@@ -567,7 +592,27 @@ function renderSidebarList() {
       body.appendChild(pblock);
     }
     block.appendChild(body);
-    list.appendChild(block);
+    return block;
+  }
+
+  for (const law of DATA.laws) {
+    const block = buildLawBlock(law);
+    const groupLabel = groupByLawId[law.id];
+    if (groupLabel) {
+      if (!groupContainers[groupLabel]) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "law-group";
+        const gh = document.createElement("div");
+        gh.className = "law-group-header";
+        gh.innerHTML = `<span class="gr">${escapeHtml(groupLabel)}</span>`;
+        wrapper.appendChild(gh);
+        groupContainers[groupLabel] = wrapper;
+        list.appendChild(wrapper);
+      }
+      groupContainers[groupLabel].appendChild(block);
+    } else {
+      list.appendChild(block);
+    }
   }
   return list;
 }
@@ -606,7 +651,7 @@ function renderReader() {
   // Breadcrumb
   const bc = document.createElement("div");
   bc.className = "breadcrumb";
-  bc.innerHTML = `Legislation › <span>${escapeHtml(law ? law.titleEn : "")}</span> › <span class="gr">${escapeHtml(part ? part.titleGr : "")}</span> › <span>${escapeHtml(article.number)}</span>`;
+  bc.innerHTML = `Νομοθεσία › <span class="gr">${escapeHtml(law ? law.titleGr : "")}</span> › <span class="gr">${escapeHtml(part ? part.titleGr : "")}</span> › <span>${escapeHtml(article.number)}</span>`;
   inner.appendChild(bc);
 
   // Header
